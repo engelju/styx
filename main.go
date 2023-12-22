@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli"
 )
 
 func main() {
@@ -17,58 +17,44 @@ func main() {
 
 	app.Action = exportAction
 	app.Flags = []cli.Flag{
-		&cli.DurationFlag{
-			Name:  "duration,d",
-			Usage: "The duration to get timeseries from",
-			Value: time.Hour,
+		cli.DurationFlag{
+			Name:        "duration,d",
+			Usage:       "The duration to get timeseries from",
+			Value:       time.Hour,
+			Destination: &flag.Duration,
 		},
-		&cli.TimestampFlag{
-			Name:   "start,s",
-			Usage:  "The start time to get timeseries from",
-			Layout: "2006-01-02T15:04:05",
+		cli.BoolTFlag{
+			Name:        "header",
+			Usage:       "Include a header into the csv file",
+			Destination: &flag.Header,
 		},
-		&cli.DurationFlag{
-			Name:  "resolution,r",
-			Usage: "The requested resolution of the timeseries in seconds (default 1s)",
-			Value: time.Second,
-		},
-		&cli.BoolFlag{
-			Name:  "header",
-			Usage: "Include a header into the csv file",
-		},
-		&cli.StringFlag{
-			Name:  "prometheus",
-			Value: "http://localhost:9090",
+		cli.StringFlag{
+			Name:        "prometheus",
+			Value:       "http://localhost:9090",
+			Destination: &flag.Prometheus,
 		},
 	}
 
-	app.Commands = []*cli.Command{{
+	app.Commands = []cli.Command{{
 		Name:   "gnuplot",
 		Usage:  "Directly plot a graph with gnuplot",
 		Action: gnuplotAction,
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  "prometheus",
-				Value: "http://localhost:9090",
+			cli.StringFlag{
+				Name:        "prometheus",
+				Value:       "http://localhost:9090",
+				Destination: &gnuplotFlag.Prometheus,
 			},
-			&cli.DurationFlag{
-				Name:  "duration,d",
-				Usage: "The duration to get timeseries from",
-				Value: time.Hour,
+			cli.DurationFlag{
+				Name:        "duration,d",
+				Usage:       "The duration to get timeseries from",
+				Value:       time.Hour,
+				Destination: &gnuplotFlag.Duration,
 			},
-			&cli.TimestampFlag{
-				Name:   "start,s",
-				Usage:  "The start time to get timeseries from",
-				Layout: "2006-01-02T15:04:05",
-			},
-			&cli.DurationFlag{
-				Name:  "resolution,r",
-				Usage: "The requested resolution of the timeseries in seconds (default 1s)",
-				Value: time.Second,
-			},
-			&cli.StringFlag{
-				Name:  "title",
-				Usage: "Give the gnuplot graph a title",
+			cli.StringFlag{
+				Name:        "title",
+				Usage:       "Give the gnuplot graph a title",
+				Destination: &gnuplotFlag.Title,
 			},
 		},
 	}, {
@@ -76,28 +62,21 @@ func main() {
 		Usage:  "Generate a file that uses matplotlib",
 		Action: matplotlibAction,
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  "prometheus",
-				Value: "http://localhost:9090",
+			cli.StringFlag{
+				Name:        "prometheus",
+				Value:       "http://localhost:9090",
+				Destination: &matplotlibFlag.Prometheus,
 			},
-			&cli.DurationFlag{
-				Name:  "duration,d",
-				Usage: "The duration to get timeseries from",
-				Value: time.Hour,
+			cli.DurationFlag{
+				Name:        "duration,d",
+				Usage:       "The duration to get timeseries from",
+				Value:       time.Hour,
+				Destination: &matplotlibFlag.Duration,
 			},
-			&cli.TimestampFlag{
-				Name:   "start,s",
-				Usage:  "The start time to get timeseries from",
-				Layout: "2006-01-02T15:04:05",
-			},
-			&cli.DurationFlag{
-				Name:  "resolution,r",
-				Usage: "The requested resolution of the timeseries in seconds (default 1s)",
-				Value: time.Second,
-			},
-			&cli.StringFlag{
-				Name:  "title",
-				Usage: "Give the gnuplot graph a title",
+			cli.StringFlag{
+				Name:        "title",
+				Usage:       "Give the gnuplot graph a title",
+				Destination: &matplotlibFlag.Title,
 			},
 		},
 	}}
@@ -107,32 +86,29 @@ func main() {
 	}
 }
 
+type flags struct {
+	Duration   time.Duration
+	Header     bool
+	Prometheus string
+}
+
+var flag flags
+
 func exportAction(c *cli.Context) error {
 	if !c.Args().Present() {
 		return fmt.Errorf(color.RedString("need a query to run"))
 	}
 
-	start := c.Timestamp("start")
-	end := start.Add(c.Duration("duration"))
-	prometheus := c.String("prometheus")
+	end := time.Now()
+	start := end.Add(-1 * flag.Duration)
 
-	// if resolution is not set, use 1s as default
-	resolution := c.Duration("resolution")
-	if resolution == 0 || resolution == time.Duration(0) {
-		resolution = time.Second
-	}
-	if resolution < time.Second {
-		return fmt.Errorf(color.RedString("resolution must be >= 1s"))
-	}
-	// fmt.Printf("Querying %s from %s to %s\n", c.Args().First(), *start, end)
-	results, err := Query(prometheus, *start, end, resolution, c.Args().First())
+	results, err := Query(flag.Prometheus, start, end, c.Args().First())
 	if err != nil {
 		return err
 	}
 
-	// Only add a line as header when the flag is true
-	header := c.Bool("header")
-	if header {
+	// Only add a line as header when the flag is true, which is the default
+	if flag.Header {
 		if err := csvHeaderWriter(os.Stdout, results); err != nil {
 			return err
 		}
